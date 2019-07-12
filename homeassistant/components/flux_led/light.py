@@ -208,8 +208,7 @@ class FluxLight(Light):
         """Return the brightness of this light between 0..255."""
         if self._mode == MODE_WHITE:
             return self._white_value
-
-        return int(self._color[2] / 100 * 255)
+        return int(self._color[2] / 100 * 255) or self._white_value
 
     @property
     def hs_color(self):
@@ -296,18 +295,25 @@ class FluxLight(Light):
             return
         # Preserve current brightness on color/white level change
         if hs_color is not None:
-            if brightness is None:
-                brightness = self.brightness
-            color = (hs_color[0], hs_color[1], brightness / 255 * 100)
+            # Special case warm-white mode
+            if hs_color == (29.6, 58.824):
+                white = 255 if brightness is None else self.brightness
+            else:
+                if brightness is None:
+                    brightness = self.brightness
+                color = (hs_color[0], hs_color[1], brightness / 255 * 100)
         elif brightness is not None:
-            color = (self._color[0], self._color[1],
-                     brightness / 255 * 100)
+            if self._color == (0.0, 0.0, 0.0) and self._white_value > 0:
+                white = brightness
+            else:
+                color = (self._color[0], self._color[1],
+                         brightness / 255 * 100)
         # handle RGBW mode
         if self._mode == MODE_RGBW:
-            if white is None:
-                self._bulb.setRgbw(*color_util.color_hsv_to_RGB(*color))
-            else:
+            if white is not None:
                 self._bulb.setRgbw(w=white)
+            else:
+                self._bulb.setRgbw(*color_util.color_hsv_to_RGB(*color))
         # handle RGB mode
         else:
             self._bulb.setRgb(*color_util.color_hsv_to_RGB(*color))
@@ -330,7 +336,7 @@ class FluxLight(Light):
                     self._error_reported = True
                 return
         self._bulb.update_state(retry=2)
-        if self._mode != MODE_WHITE and self._bulb.getRgb() != (0, 0, 0):
+        if self._mode != MODE_WHITE:
             color = self._bulb.getRgbw()
             self._color = color_util.color_RGB_to_hsv(*color[0:3])
             self._white_value = color[3]
